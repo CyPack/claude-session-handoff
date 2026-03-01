@@ -25,6 +25,29 @@ This skill implements a **structured handoff protocol** that generates a compreh
 - **Lesson quality control**: Confidence tagging `[H]`/`[M]`/`[L]` with automatic cleanup
 - **Manual-only activation**: No autonomous handoffs - only when you ask for it
 
+## Why a Skill Instead of a Rule?
+
+Claude Code has two ways to load instructions:
+
+| | Rules (`~/.claude/rules/`) | Skills (`~/.claude/skills/`) |
+|---|---|---|
+| **Loading** | Auto-loaded **every** session | On-demand, loaded only when triggered |
+| **Token cost** | ~8,900 tokens consumed even when unused | 0 tokens until you say "handoff yap" |
+| **When useful** | Instructions needed throughout the session | Instructions needed only at specific moments |
+
+The handoff protocol is **only needed at the end of a session** — the 2 minutes when you're wrapping up. Loading it for the entire 200K context window is wasteful:
+
+```
+200K context window = your budget for the entire session
+
+Rule mode:    [████ 8,900 tokens wasted ████|............remaining context............]
+Skill mode:   [...................full context available.................|████ loaded on demand]
+```
+
+At ~8,900 tokens, this protocol would consume **~4.5% of your context budget** sitting idle. As a skill, those tokens are available for actual work until the moment you need them.
+
+This matters even more when you have multiple rules — we reduced our own auto-load budget from 72K to 19K tokens (74% savings) by converting infrequently-used rules to skills.
+
 ## Installation
 
 ### As a Claude Code Skill (Recommended)
@@ -44,7 +67,7 @@ cp SKILL.md ~/.claude/skills/session-handoff/SKILL.md
 cp SKILL.md ~/.claude/rules/session-handoff-protocol.md
 ```
 
-> **Recommendation**: Use the skill approach. The protocol is only needed at session boundaries, not throughout the entire session. This saves ~8,900 tokens of context per session.
+> **Recommendation**: Use the skill approach. See [Why a Skill Instead of a Rule?](#why-a-skill-instead-of-a-rule) above.
 
 ## Usage
 

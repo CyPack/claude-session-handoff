@@ -25,28 +25,54 @@ This skill implements a **structured handoff protocol** that generates a compreh
 - **Lesson quality control**: Confidence tagging `[H]`/`[M]`/`[L]` with automatic cleanup
 - **Manual-only activation**: No autonomous handoffs - only when you ask for it
 
-## Why a Skill Instead of a Rule?
+## Why Not Just Let Context Auto-Compact?
 
-Claude Code has two ways to load instructions:
+When a Claude Code session approaches its context limit, the system automatically compresses earlier messages to make room. This sounds fine — but it's **lossy compression** and it compounds:
 
-| | Rules (`~/.claude/rules/`) | Skills (`~/.claude/skills/`) |
+```
+Your session as it fills up:
+
+ Start:   [system + rules + CLAUDE.md | fresh conversation .........................]
+ Middle:  [system + rules + CLAUDE.md | conversation keeps growing .................]
+ Full:    [system + rules + CLAUDE.md | ~~compressed~~ | recent messages ...........]
+ Fuller:  [system + rules + CLAUDE.md | ~~more compressed~~ | recent ...............]
+```
+
+Each compaction round **loses information**. The system tries to keep a summary, but:
+
+- Exact file paths become "the config file" or disappear entirely
+- Specific numbers (`-28dBm`, `port 9090`, `line 657`) get dropped
+- Architectural decisions lose their reasoning ("we chose Redis" but not *why*)
+- Edge cases and workarounds vanish — you rediscover them the hard way
+- Task dependencies and blockers get flattened into vague summaries
+- Multi-step debugging context (what you tried, what failed, why) collapses
+
+**The handoff protocol takes a different approach: don't compress — start fresh.**
+
+```
+Auto-compact (what happens by default):
+
+ Session: [.......|██ compacted ██|██ compacted again ██| recent ]
+                   ↑ lost details   ↑ lost more details
+ Result:  Degraded context, Claude forgets things mid-session
+
+Handoff protocol (what this does):
+
+ Session 1: [...full context...] → "handoff yap" → structured snapshot saved
+ Session 2: [structured snapshot | fresh 200K context .........................]
+ Result:    Zero loss, full context budget available
+```
+
+| | Auto-Compaction | Handoff Protocol |
 |---|---|---|
-| **Loading** | Auto-loaded **every** session | On-demand, loaded only when triggered |
-| **Token cost** | ~8,900 tokens consumed even when unused | 0 tokens until you say "handoff yap" |
-| **When useful** | Instructions needed throughout the session | Instructions needed only at specific moments |
+| **Trigger** | Automatic when context fills | Manual, when you decide |
+| **Information loss** | Lossy, cumulative — gets worse over time | Lossless — structured capture of everything that matters |
+| **Context budget** | Shrinking — each compaction leaves less room | Full 200K reset every session |
+| **What survives** | Recent messages + rough summary | File paths, numbers, decisions, task state, triggers, success criteria |
+| **Task continuity** | In-memory tasks lost on compaction | Tasks serialized as text, recreated in next session |
+| **Control** | None — system decides what to compress | Full — you decide when to hand off |
 
-The handoff protocol is **only needed at the end of a session** — the 2 minutes when you're wrapping up. Loading it for the entire 200K context window is wasteful:
-
-```
-200K context window = your budget for the entire session
-
-Rule mode:    [████ 8,900 tokens wasted ████|............remaining context............]
-Skill mode:   [...................full context available.................|████ loaded on demand]
-```
-
-At ~8,900 tokens, this protocol would consume **~4.5% of your context budget** sitting idle. As a skill, those tokens are available for actual work until the moment you need them.
-
-This matters even more when you have multiple rules — we reduced our own auto-load budget from 72K to 19K tokens (74% savings) by converting infrequently-used rules to skills.
+Think of it this way: auto-compaction is like your notebook pages fading while you're still writing. The handoff protocol is like finishing a clean page, tearing it out, and starting a new notebook with a perfect copy of your notes.
 
 ## Installation
 
@@ -67,7 +93,7 @@ cp SKILL.md ~/.claude/skills/session-handoff/SKILL.md
 cp SKILL.md ~/.claude/rules/session-handoff-protocol.md
 ```
 
-> **Recommendation**: Use the skill approach. See [Why a Skill Instead of a Rule?](#why-a-skill-instead-of-a-rule) above.
+> **Recommendation**: Use the skill approach. The protocol is only needed at session boundaries, not throughout the entire session. This saves ~8,900 tokens of context per session.
 
 ## Usage
 
